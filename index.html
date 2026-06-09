@@ -14,7 +14,6 @@
     --ink:#2e2a22;
     --ink-soft:#6b6253;
     --rule:#cdbfa4;
-    /* per-week accents (overwritten by JS) */
     --bloom:#c2453f;
     --bloom-2:#e08a6a;
     --leaf:#5a6b3b;
@@ -38,7 +37,6 @@
     transition:background-color 1s ease;
   }
 
-  /* the card — a pressed-flower almanac page */
   .card{
     position:relative;
     width:min(640px,100%);
@@ -50,7 +48,6 @@
     padding:clamp(1.6rem,5vw,3.2rem);
     z-index:2;
   }
-  /* thin double frame */
   .card::before{
     content:"";
     position:absolute;
@@ -58,7 +55,6 @@
     border:1px solid var(--rule);
     pointer-events:none;
   }
-  /* corner ornaments */
   .corner{position:absolute;width:26px;height:26px;color:var(--bloom);opacity:.8;}
   .corner.tl{top:14px;left:14px;}
   .corner.tr{top:14px;right:14px;transform:scaleX(-1);}
@@ -100,7 +96,6 @@
   }
   .sub .dot{width:4px;height:4px;border-radius:50%;background:var(--bloom);display:inline-block;}
 
-  /* botanical plate */
   .plate{
     display:flex;
     justify-content:center;
@@ -109,7 +104,6 @@
   }
   .plate svg{width:min(260px,70%);height:auto;overflow:visible;}
 
-  /* line-draw animations */
   .ink-line{
     fill:none;
     stroke:var(--ink);
@@ -208,7 +202,6 @@
     opacity:.85;
   }
 
-  /* drifting pressed petals */
   .petal{position:fixed;top:-30px;z-index:1;pointer-events:none;opacity:0;}
 
   @keyframes rise{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
@@ -216,6 +209,14 @@
     0%{transform:translateY(-30px) rotate(0);opacity:0;}
     12%{opacity:.7;}
     100%{transform:translateY(104vh) translateX(var(--dx)) rotate(420deg);opacity:0;}
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none !important;}
+    .ink-line{stroke-dashoffset:0;}
+    .ink-fill{opacity:1;}
+    .stem-draw{stroke-dashoffset:0;}
+    .species,.quote,.signoff{opacity:1;}
   }
 
   @media(max-width:420px){
@@ -250,18 +251,18 @@
   </article>
 
 <script>
-/* ---------- 30 love quotes ---------- */
+/* ---------- love quotes ---------- */
 const QUOTES = [
   "You are my favorite notification and my softest place to land.",
   "If I had a flower for every time I thought of you, I'd walk through my garden forever.",
   "I love you more than yesterday and far less than tomorrow.",
   "You're the voice that calms my head.",
   "Every love story is beautiful, but ours is the best coz I am the best.",
-  "Over the seas and continetns, I love you harder everyday.",
+  "Over the seas and continents, I love you harder everyday.",
   "My heart chose you, and it has wonderful taste.",
   "You are the one I never expected to meet, finally did and makes me happy.",
   "Loving you is not the easiest thing I've ever done but is the thing I wanna do forever.",
-  "With you, life feels hollow.",
+  "Without you, life feels hollow.",
   "You are proof that the universe occasionally gets things perfectly right.",
   "My favorite place in the world is your beautiful face.",
   "I love the way you exist. Please keep doing exactly that.",
@@ -282,7 +283,6 @@ const GREETINGS = [
   "for the prettiest person i know"
 ];
 
-/* botanical names paired to the 30 plates (purely decorative & sweet) */
 const SPECIES = [
   ["Poppy","Papaver amoris"],["Cosmos","Cosmos bipinnatus"],["Daisy","Bellis perennis"],
   ["Anemone","Anemone coronaria"],["Wild Rose","Rosa rubiginosa"],["Buttercup","Ranunculus acris"],
@@ -296,13 +296,10 @@ const SPECIES = [
   ["Helenium","Helenium autumnale"],["Sweet Briar","Rosa eglanteria"],["Heartsease","Viola tricolor"]
 ];
 
-/* ---------- 5 weekly ink/accent themes (all on warm paper) ---------- */
-const THEMES = [
-  { name:"Crimson Edition", bloom:"#c2453f", bloom2:"#e08a6a", leaf:"#5a6b3b", seal:"#b8472f", paper:"#f6efe1", paper2:"#efe5d2" },
-  { name:"Cobalt Edition",  bloom:"#3a5a8c", bloom2:"#6f93c0", leaf:"#4f6b4a", seal:"#2f548c", paper:"#f1eee6", paper2:"#e6e2d6" },
-  { name:"Saffron Edition", bloom:"#cf8a1f", bloom2:"#e7b25a", leaf:"#6b7233", seal:"#b3741a", paper:"#f7f0dd", paper2:"#efe6cd" },
-  { name:"Plum Edition",    bloom:"#7a3b6e", bloom2:"#b06fa0", leaf:"#566b4a", seal:"#6e3360", paper:"#f4ede6", paper2:"#e9e0d6" },
-  { name:"Teal Edition",    bloom:"#1f7a72", bloom2:"#5cb0a7", leaf:"#4d6b3f", seal:"#1c6f68", paper:"#f1efe6", paper2:"#e4e3d6" }
+/* edition names cycle by hue family rather than week */
+const EDITIONS = [
+  "Crimson Edition","Cobalt Edition","Saffron Edition","Plum Edition","Teal Edition",
+  "Rose Edition","Amber Edition","Violet Edition","Forest Edition","Coral Edition"
 ];
 
 /* day-of-year so every device agrees */
@@ -313,33 +310,67 @@ function dayNumber(){
   return Math.floor(diff/86400000);
 }
 
-/* ---------- procedural ink-drawn flower plate (30 variants) ---------- */
-function buildFlower(seed,t){
-  let s=seed*9301+49297;
-  const rnd=()=>{s=(s*9301+49297)%233280;return s/233280;};
+/* small helpers */
+function hsl(h,s,l){return `hsl(${((h%360)+360)%360} ${s}% ${l}%)`;}
 
-  const petalCount=6+(seed%7);          // 6–12
-  const pointy=seed%2===0;
-  const doubleRing=seed%3===0;
+/* ---------- DAILY palette derived from day-of-year ----------
+   Hue advances ~37° per day so neighbouring days look clearly different
+   and a full hue loop takes ~10 days, never repeating within a month
+   the way the old day/7 weekly scheme did.                         */
+function buildTheme(day){
+  const hue=(day*37)%360;
+  const warmPaper = (hue>30 && hue<200);        // greens/blues get a cooler paper
+  return {
+    name: EDITIONS[day%EDITIONS.length],
+    bloom:  hsl(hue,       58, 44),
+    bloom2: hsl(hue+18,    62, 64),
+    leaf:   hsl(95+(day%40),32, 34),
+    seal:   hsl(hue-6,     55, 40),
+    paper:  warmPaper ? "#f1efe6" : "#f6efe1",
+    paper2: warmPaper ? "#e6e3d7" : "#efe5d2"
+  };
+}
+
+/* ---------- procedural ink-drawn flower plate ----------
+   Seeded by full day-of-year (not day%30), so the geometry does not
+   repeat on a monthly cycle. Petal length now varies per-petal and
+   edges can be wavy, widening how different two flowers look.        */
+function buildFlower(seed,t){
+  let s=(seed*9301+49297)>>>0;
+  const rnd=()=>{s=(s*1103515245+12345)>>>0;return (s>>>8)/16777216;};
+
+  const petalCount=5+(seed%9);          // 5–13
+  const pointy=rnd()>0.5;
+  const doubleRing=rnd()>0.55;
+  const wavy=rnd()>0.6;                  // rippled petal edge
   const cx=130,cy=120;
-  const rOuter=58+(seed%4)*7;
-  const rInner=rOuter*0.34;
+  const rOuter=50+(seed%5)*8;
+  const rInner=rOuter*(0.28+rnd()*0.14);
+  const lengthJitter=0.12+rnd()*0.22;    // how uneven petal lengths are
 
   function petal(angle,r,wmul){
     const rad=(angle-90)*Math.PI/180;
     const tipX=cx+Math.cos(rad)*r, tipY=cy+Math.sin(rad)*r;
-    const w=(pointy?r*0.30:r*0.46)*wmul;
+    const w=(pointy?r*0.28:r*0.46)*wmul;
     const perp=rad+Math.PI/2;
-    const midX=cx+Math.cos(rad)*r*0.55, midY=cy+Math.sin(rad)*r*0.55;
+    const midR=r*0.55;
+    const midX=cx+Math.cos(rad)*midR, midY=cy+Math.sin(rad)*midR;
     const ax=midX+Math.cos(perp)*w, ay=midY+Math.sin(perp)*w;
     const bx=midX-Math.cos(perp)*w, by=midY-Math.sin(perp)*w;
+    if(wavy){
+      // notch the tip for a rippled look
+      const nX=cx+Math.cos(rad)*(r*0.86), nY=cy+Math.sin(rad)*(r*0.86);
+      const tnX=tipX+Math.cos(perp)*w*0.18, tnY=tipY+Math.sin(perp)*w*0.18;
+      return `M${cx},${cy} Q${ax},${ay} ${tnX},${tnY} Q${nX},${nY} ${tipX},${tipY} Q${nX},${nY} ${bx},${by} ${cx},${cy} Z`;
+    }
     return `M${cx},${cy} Q${ax},${ay} ${tipX},${tipY} Q${bx},${by} ${cx},${cy} Z`;
   }
 
   let outline="", fill="";
   for(let i=0;i<petalCount;i++){
     const ang=(360/petalCount)*i+(seed%5)*3;
-    const d=petal(ang,rOuter,1);
+    const r=rOuter*(1-lengthJitter*0.5+rnd()*lengthJitter);
+    const d=petal(ang,r,0.85+rnd()*0.3);
     fill   +=`<path class="ink-fill" d="${d}" fill="${t.bloom}" opacity="0" style="animation-delay:${1.6+i*0.04}s"/>`;
     outline+=`<path class="ink-line" d="${d}" style="animation-delay:${i*0.05}s"/>`;
   }
@@ -352,7 +383,6 @@ function buildFlower(seed,t){
     }
   }
 
-  // center
   let center=`<circle class="ink-fill" cx="${cx}" cy="${cy}" r="${rInner*0.62}" fill="${t.bloom2}" style="animation-delay:2s"/>
               <circle class="ink-line" cx="${cx}" cy="${cy}" r="${rInner*0.62}" style="animation-delay:.6s"/>`;
   const dots=7+(seed%6);
@@ -361,15 +391,15 @@ function buildFlower(seed,t){
     center+=`<circle class="ink-fill" cx="${cx+Math.cos(a)*rr}" cy="${cy+Math.sin(a)*rr}" r="2.2" fill="${t.seal}" style="animation-delay:2.1s"/>`;
   }
 
-  // stem + 2 leaves
-  const bend=seed%2?18:-18;
+  const bend=(rnd()>0.5?1:-1)*(12+rnd()*14);
   const stem=`<path class="stem-draw" d="M${cx},${cy+rInner*0.5} Q${cx+bend},230 ${cx-bend*0.3},340"/>`;
-  const ly=215+(seed%3)*12;
+  const ly=210+(seed%4)*12;
+  const leafSide=rnd()>0.5?1:-1;
   const leaves=`
-    <path class="stem-draw" style="animation-delay:1s" d="M${cx+2},${ly} Q${cx+48},${ly-22} ${cx+62},${ly+12}"/>
-    <path class="ink-fill" style="animation-delay:1.9s" d="M${cx+2},${ly} Q${cx+48},${ly-22} ${cx+62},${ly+12} Q${cx+30},${ly+22} ${cx+2},${ly} Z" fill="${t.leaf}" opacity="0"/>
-    <path class="stem-draw" style="animation-delay:1.2s" d="M${cx-6},${ly+40} Q${cx-50},${ly+18} ${cx-64},${ly+50}"/>
-    <path class="ink-fill" style="animation-delay:2s" d="M${cx-6},${ly+40} Q${cx-50},${ly+18} ${cx-64},${ly+50} Q${cx-30},${ly+56} ${cx-6},${ly+40} Z" fill="${t.leaf}" opacity="0"/>
+    <path class="stem-draw" style="animation-delay:1s" d="M${cx+2},${ly} Q${cx+leafSide*48},${ly-22} ${cx+leafSide*62},${ly+12}"/>
+    <path class="ink-fill" style="animation-delay:1.9s" d="M${cx+2},${ly} Q${cx+leafSide*48},${ly-22} ${cx+leafSide*62},${ly+12} Q${cx+leafSide*30},${ly+22} ${cx+2},${ly} Z" fill="${t.leaf}" opacity="0"/>
+    <path class="stem-draw" style="animation-delay:1.2s" d="M${cx-6},${ly+40} Q${cx-leafSide*50},${ly+18} ${cx-leafSide*64},${ly+50}"/>
+    <path class="ink-fill" style="animation-delay:2s" d="M${cx-6},${ly+40} Q${cx-leafSide*50},${ly+18} ${cx-leafSide*64},${ly+50} Q${cx-leafSide*30},${ly+56} ${cx-6},${ly+40} Z" fill="${t.leaf}" opacity="0"/>
   `;
 
   return `<svg viewBox="0 0 260 360">
@@ -389,7 +419,7 @@ function applyTheme(t){
 
 function init(){
   const day=dayNumber();
-  const theme=THEMES[Math.floor(day/7)%THEMES.length];
+  const theme=buildTheme(day);
   applyTheme(theme);
 
   document.getElementById('num').textContent=String((day%365)+1).padStart(3,'0');
@@ -400,7 +430,7 @@ function init(){
   const sp=SPECIES[day%SPECIES.length];
   document.getElementById('species').innerHTML=`<b>${sp[0]}</b> — <span>${sp[1]}</span>`;
 
-  document.getElementById('plate').innerHTML=buildFlower(day%30,theme);
+  document.getElementById('plate').innerHTML=buildFlower(day,theme);
 
   const d=new Date();
   document.getElementById('date').textContent=
@@ -410,6 +440,7 @@ function init(){
 }
 
 function spawnPetals(t){
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
   const cols=[t.bloom,t.bloom2,t.leaf];
   for(let i=0;i<14;i++){
     setTimeout(()=>{
