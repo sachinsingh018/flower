@@ -335,76 +335,162 @@ function buildTheme(day){
    Seeded by full day-of-year (not day%30), so the geometry does not
    repeat on a monthly cycle. Petal length now varies per-petal and
    edges can be wavy, widening how different two flowers look.        */
+/* ---------- procedural ink-drawn flower plate ----------
+   Seeded by full day-of-year. Now renders one of several flower
+   archetypes with layered petal rings, varied edge styles (smooth,
+   notched, serrated, lobed), petal veins, stamens and textured
+   centers, plus richer foliage. Greatly widens visual variety.     */
 function buildFlower(seed,t){
   let s=(seed*9301+49297)>>>0;
   const rnd=()=>{s=(s*1103515245+12345)>>>0;return (s>>>8)/16777216;};
+  const pick=arr=>arr[Math.floor(rnd()*arr.length)];
 
-  const petalCount=5+(seed%9);          // 5–13
-  const pointy=rnd()>0.5;
-  const doubleRing=rnd()>0.55;
-  const wavy=rnd()>0.6;                  // rippled petal edge
   const cx=130,cy=120;
-  const rOuter=50+(seed%5)*8;
-  const rInner=rOuter*(0.28+rnd()*0.14);
-  const lengthJitter=0.12+rnd()*0.22;    // how uneven petal lengths are
+  const archetype=seed%5;                 // 0 daisy 1 rose 2 poppy 3 dahlia 4 star
+  const edge=pick(['smooth','notch','serrate','lobe']);
+  const baseR=52+(seed%5)*7;
+  const rInner=baseR*(0.24+rnd()*0.12);
 
-  function petal(angle,r,wmul){
+  /* ----- single petal path with selectable edge treatment ----- */
+  function petal(angle,r,wmul,style){
     const rad=(angle-90)*Math.PI/180;
-    const tipX=cx+Math.cos(rad)*r, tipY=cy+Math.sin(rad)*r;
-    const w=(pointy?r*0.28:r*0.46)*wmul;
     const perp=rad+Math.PI/2;
+    const pointy=(archetype===4);
+    const w=(pointy?r*0.24:r*0.42)*wmul;
+    const tipX=cx+Math.cos(rad)*r,  tipY=cy+Math.sin(rad)*r;
     const midR=r*0.55;
-    const midX=cx+Math.cos(rad)*midR, midY=cy+Math.sin(rad)*midR;
-    const ax=midX+Math.cos(perp)*w, ay=midY+Math.sin(perp)*w;
-    const bx=midX-Math.cos(perp)*w, by=midY-Math.sin(perp)*w;
-    if(wavy){
-      // notch the tip for a rippled look
-      const nX=cx+Math.cos(rad)*(r*0.86), nY=cy+Math.sin(rad)*(r*0.86);
-      const tnX=tipX+Math.cos(perp)*w*0.18, tnY=tipY+Math.sin(perp)*w*0.18;
-      return `M${cx},${cy} Q${ax},${ay} ${tnX},${tnY} Q${nX},${nY} ${tipX},${tipY} Q${nX},${nY} ${bx},${by} ${cx},${cy} Z`;
+    const mx=cx+Math.cos(rad)*midR, my=cy+Math.sin(rad)*midR;
+    const ax=mx+Math.cos(perp)*w,   ay=my+Math.sin(perp)*w;
+    const bx=mx-Math.cos(perp)*w,   by=my-Math.sin(perp)*w;
+
+    if(style==='notch'){
+      const nR=r*0.9, nW=w*0.5;
+      const nx=cx+Math.cos(rad)*nR, ny=cy+Math.sin(rad)*nR;
+      const t1x=tipX+Math.cos(perp)*nW, t1y=tipY+Math.sin(perp)*nW;
+      const t2x=tipX-Math.cos(perp)*nW, t2y=tipY-Math.sin(perp)*nW;
+      return `M${cx},${cy} Q${ax},${ay} ${t1x},${t1y} Q${nx},${ny} ${t2x},${t2y} Q${bx},${by} ${cx},${cy} Z`;
     }
+    if(style==='serrate'){
+      // build a jagged outer edge with several small teeth
+      const teeth=3;
+      let p=`M${cx},${cy} Q${ax},${ay} `;
+      const startR=r*0.78;
+      const sx=cx+Math.cos(rad)*startR+Math.cos(perp)*w*0.5;
+      const sy=cy+Math.sin(rad)*startR+Math.sin(perp)*w*0.5;
+      p+=`${sx},${sy} `;
+      for(let k=0;k<=teeth;k++){
+        const f=k/teeth;
+        const off=(f-0.5)*2;            // -1..1 across the tip
+        const rr=r*(0.92+0.1*((k%2)?1:-0.4));
+        const ex=cx+Math.cos(rad)*rr+Math.cos(perp)*off*w*0.9;
+        const ey=cy+Math.sin(rad)*rr+Math.sin(perp)*off*w*0.9;
+        p+=`L${ex},${ey} `;
+      }
+      p+=`Q${bx},${by} ${cx},${cy} Z`;
+      return p;
+    }
+    if(style==='lobe'){
+      const l1x=cx+Math.cos(rad)*r*0.82+Math.cos(perp)*w*0.7;
+      const l1y=cy+Math.sin(rad)*r*0.82+Math.sin(perp)*w*0.7;
+      const l2x=cx+Math.cos(rad)*r*0.82-Math.cos(perp)*w*0.7;
+      const l2y=cy+Math.sin(rad)*r*0.82-Math.sin(perp)*w*0.7;
+      return `M${cx},${cy} Q${ax},${ay} ${l1x},${l1y} Q${tipX},${tipY} ${l2x},${l2y} Q${bx},${by} ${cx},${cy} Z`;
+    }
+    // smooth
     return `M${cx},${cy} Q${ax},${ay} ${tipX},${tipY} Q${bx},${by} ${cx},${cy} Z`;
   }
 
-  let outline="", fill="";
-  for(let i=0;i<petalCount;i++){
-    const ang=(360/petalCount)*i+(seed%5)*3;
-    const r=rOuter*(1-lengthJitter*0.5+rnd()*lengthJitter);
-    const d=petal(ang,r,0.85+rnd()*0.3);
-    fill   +=`<path class="ink-fill" d="${d}" fill="${t.bloom}" opacity="0" style="animation-delay:${1.6+i*0.04}s"/>`;
-    outline+=`<path class="ink-line" d="${d}" style="animation-delay:${i*0.05}s"/>`;
+  /* faint center vein for a petal */
+  function vein(angle,r){
+    const rad=(angle-90)*Math.PI/180;
+    const ex=cx+Math.cos(rad)*r*0.82, ey=cy+Math.sin(rad)*r*0.82;
+    return `<path class="ink-line" stroke-width="1" style="animation-delay:${0.8}s" d="M${cx},${cy} L${ex},${ey}"/>`;
   }
-  if(doubleRing){
-    for(let i=0;i<petalCount;i++){
-      const ang=(360/petalCount)*i+(360/petalCount)/2;
-      const d=petal(ang,rOuter*0.66,0.9);
-      fill   +=`<path class="ink-fill" d="${d}" fill="${t.bloom2}" opacity="0" style="animation-delay:${1.9+i*0.04}s"/>`;
-      outline+=`<path class="ink-line" d="${d}" style="animation-delay:${0.3+i*0.05}s"/>`;
+
+  let fill="", outline="", center="";
+
+  /* ----- assemble petal rings per archetype ----- */
+  let rings;
+  if(archetype===0){            // daisy: many slim petals, two rings
+    rings=[{n:14+(seed%6),r:baseR,w:0.55,c:t.bloom,off:0},
+           {n:14+(seed%6),r:baseR*0.8,w:0.5,c:t.bloom2,off:0.5}];
+  }else if(archetype===1){      // rose: tight overlapping spiral rings
+    rings=[{n:7,r:baseR,w:1.05,c:t.bloom,off:0},
+           {n:7,r:baseR*0.74,w:1.0,c:t.bloom2,off:0.5},
+           {n:6,r:baseR*0.5,w:0.95,c:t.bloom,off:0.25},
+           {n:5,r:baseR*0.3,w:0.9,c:t.bloom2,off:0.6}];
+  }else if(archetype===2){      // poppy: 4–6 broad cupped petals
+    rings=[{n:4+(seed%3),r:baseR,w:1.25,c:t.bloom,off:0},
+           {n:4+(seed%3),r:baseR*0.7,w:1.1,c:t.bloom2,off:0.5}];
+  }else if(archetype===3){      // dahlia: dense, several tiers
+    rings=[{n:12,r:baseR,w:0.6,c:t.bloom,off:0},
+           {n:12,r:baseR*0.82,w:0.58,c:t.bloom2,off:0.5},
+           {n:10,r:baseR*0.62,w:0.55,c:t.bloom,off:0.25},
+           {n:8, r:baseR*0.42,w:0.5,c:t.bloom2,off:0.6}];
+  }else{                        // star: pointed open petals
+    rings=[{n:6+(seed%3),r:baseR,w:0.7,c:t.bloom,off:0},
+           {n:6+(seed%3),r:baseR*0.6,w:0.6,c:t.bloom2,off:0.5}];
+  }
+
+  let order=0;
+  rings.forEach((ring,ri)=>{
+    for(let i=0;i<ring.n;i++){
+      const ang=(360/ring.n)*(i+ring.off)+(seed%7)*2;
+      const r=ring.r*(0.9+rnd()*0.18);
+      const d=petal(ang,r,ring.w*(0.85+rnd()*0.3),edge);
+      fill   +=`<path class="ink-fill" d="${d}" fill="${ring.c}" opacity="0" style="animation-delay:${1.5+order*0.025}s"/>`;
+      outline+=`<path class="ink-line" d="${d}" style="animation-delay:${order*0.03}s"/>`;
+      if(ri===0 && (archetype===0||archetype===2)) outline+=vein(ang,r);
+      order++;
     }
+  });
+
+  /* ----- center: textured disc with stamens or seed dots ----- */
+  center=`<circle class="ink-fill" cx="${cx}" cy="${cy}" r="${rInner}" fill="${t.bloom2}" style="animation-delay:2s"/>
+          <circle class="ink-line" cx="${cx}" cy="${cy}" r="${rInner}" style="animation-delay:.6s"/>
+          <circle class="ink-line" cx="${cx}" cy="${cy}" r="${rInner*0.6}" stroke-width="1" style="animation-delay:.7s"/>`;
+  if(archetype===2){            // poppy: ring of stamens
+    const st=10+(seed%6);
+    for(let i=0;i<st;i++){
+      const a=(360/st)*i*Math.PI/180, r0=rInner*0.55, r1=rInner*1.5;
+      center+=`<path class="ink-line" stroke-width="1" style="animation-delay:2.1s"
+        d="M${cx+Math.cos(a)*r0},${cy+Math.sin(a)*r0} L${cx+Math.cos(a)*r1},${cy+Math.sin(a)*r1}"/>
+        <circle class="ink-fill" cx="${cx+Math.cos(a)*r1}" cy="${cy+Math.sin(a)*r1}" r="2.2" fill="${t.seal}" style="animation-delay:2.2s"/>`;
+    }
+  }else{                        // seed-dot stipple, two rings
+    [0.34,0.62].forEach((rf,ringIx)=>{
+      const dots=(ringIx?10:6)+(seed%4);
+      for(let i=0;i<dots;i++){
+        const a=((360/dots)*i+ringIx*15)*Math.PI/180, rr=rInner*rf;
+        center+=`<circle class="ink-fill" cx="${cx+Math.cos(a)*rr}" cy="${cy+Math.sin(a)*rr}" r="${ringIx?1.6:2.2}" fill="${t.seal}" style="animation-delay:2.1s"/>`;
+      }
+    });
   }
 
-  let center=`<circle class="ink-fill" cx="${cx}" cy="${cy}" r="${rInner*0.62}" fill="${t.bloom2}" style="animation-delay:2s"/>
-              <circle class="ink-line" cx="${cx}" cy="${cy}" r="${rInner*0.62}" style="animation-delay:.6s"/>`;
-  const dots=7+(seed%6);
-  for(let i=0;i<dots;i++){
-    const a=(360/dots)*i*Math.PI/180, rr=rInner*0.34;
-    center+=`<circle class="ink-fill" cx="${cx+Math.cos(a)*rr}" cy="${cy+Math.sin(a)*rr}" r="2.2" fill="${t.seal}" style="animation-delay:2.1s"/>`;
-  }
-
+  /* ----- stem, leaves, and a small bud for richness ----- */
   const bend=(rnd()>0.5?1:-1)*(12+rnd()*14);
   const stem=`<path class="stem-draw" d="M${cx},${cy+rInner*0.5} Q${cx+bend},230 ${cx-bend*0.3},340"/>`;
-  const ly=210+(seed%4)*12;
   const leafSide=rnd()>0.5?1:-1;
-  const leaves=`
-    <path class="stem-draw" style="animation-delay:1s" d="M${cx+2},${ly} Q${cx+leafSide*48},${ly-22} ${cx+leafSide*62},${ly+12}"/>
-    <path class="ink-fill" style="animation-delay:1.9s" d="M${cx+2},${ly} Q${cx+leafSide*48},${ly-22} ${cx+leafSide*62},${ly+12} Q${cx+leafSide*30},${ly+22} ${cx+2},${ly} Z" fill="${t.leaf}" opacity="0"/>
-    <path class="stem-draw" style="animation-delay:1.2s" d="M${cx-6},${ly+40} Q${cx-leafSide*50},${ly+18} ${cx-leafSide*64},${ly+50}"/>
-    <path class="ink-fill" style="animation-delay:2s" d="M${cx-6},${ly+40} Q${cx-leafSide*50},${ly+18} ${cx-leafSide*64},${ly+50} Q${cx-leafSide*30},${ly+56} ${cx-6},${ly+40} Z" fill="${t.leaf}" opacity="0"/>
-  `;
+  function leaf(y,side,delay,len){
+    const tx=cx+side*len, ty=y+12, c1=cx+side*(len*0.75);
+    return `
+      <path class="stem-draw" style="animation-delay:${delay}s" d="M${cx},${y} Q${c1},${y-24} ${tx},${ty}"/>
+      <path class="ink-fill" style="animation-delay:${delay+0.8}s" d="M${cx},${y} Q${c1},${y-24} ${tx},${ty} Q${cx+side*(len*0.45)},${ty+12} ${cx},${y} Z" fill="${t.leaf}" opacity="0"/>
+      <path class="ink-line" stroke-width="1" style="animation-delay:${delay+0.3}s" d="M${cx},${y} L${tx*0.96+cx*0.04},${ty}"/>`;
+  }
+  const ly=200+(seed%4)*12;
+  const leaves=leaf(ly,leafSide,1.0,58)+leaf(ly+48,-leafSide,1.2,64);
+
+  // little side bud
+  const budY=ly-30, budX=cx+leafSide*40;
+  const bud=`
+    <path class="stem-draw" style="animation-delay:1.4s" d="M${cx+leafSide*4},${ly-6} Q${budX-leafSide*6},${budY+10} ${budX},${budY}"/>
+    <ellipse class="ink-fill" cx="${budX}" cy="${budY}" rx="7" ry="11" fill="${t.bloom2}" opacity="0" style="animation-delay:2.2s" transform="rotate(${leafSide*20} ${budX} ${budY})"/>
+    <ellipse class="ink-line" cx="${budX}" cy="${budY}" rx="7" ry="11" style="animation-delay:1.6s" transform="rotate(${leafSide*20} ${budX} ${budY})"/>`;
 
   return `<svg viewBox="0 0 260 360">
     <g class="sway">
-      ${stem}${leaves}
+      ${stem}${leaves}${bud}
       <g>${fill}${outline}${center}</g>
     </g>
   </svg>`;
